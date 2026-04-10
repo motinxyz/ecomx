@@ -3,6 +3,7 @@ import type { Logger } from 'pino';
 
 // Inject the custom 'log' property into the Express Request type globally
 declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
     interface Request {
       log: Logger;

@@ -18,8 +18,15 @@
     "@opentelemetry/sdk-metrics": "^2.6.1",
     "@opentelemetry/sdk-node": "^0.214.0",
     "@opentelemetry/semantic-conventions": "^1.40.0",
-    "elysia": "^1.4.28",
     "pino": "^10.3.1"
+  },
+  "peerDependencies": {
+    "elysia": "^1.4.28"
+  },
+  "peerDependenciesMeta": {
+    "elysia": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
@@ -31,6 +38,20 @@
         "executor": "nx:run-commands",
         "options": {
           "command": "bun test",
+          "cwd": "{projectRoot}"
+        }
+      },
+      "typecheck": {
+        "executor": "nx:run-commands",
+        "options": {
+          "command": "bunx tsc --noEmit",
+          "cwd": "{projectRoot}"
+        }
+      },
+      "lint": {
+        "executor": "nx:run-commands",
+        "options": {
+          "command": "bunx eslint src/",
           "cwd": "{projectRoot}"
         }
       }

@@ -1,4 +1,4 @@
-import pino, { type Logger, type LoggerOptions } from 'pino';
+import pino, { type Logger, type LoggerOptions, type DestinationStream } from 'pino';
 
 export interface LoggerConfig {
   serviceName: string;
@@ -16,7 +16,7 @@ export interface LoggerConfig {
  * 3. The log record is forwarded to BatchLogRecordProcessor → OTLPLogExporter
  * 4. trace_id and span_id are injected automatically from the active OTel context
  */
-export function createLogger(config: LoggerConfig): Logger {
+export async function createLogger(config: LoggerConfig): Promise<Logger> {
   const { serviceName, level = 'info', pretty = false } = config;
 
   const options: LoggerOptions = {
@@ -25,18 +25,18 @@ export function createLogger(config: LoggerConfig): Logger {
     redact: ['req.headers.authorization', 'req.headers.cookie'],
   };
 
-  let stream = process.stdout;
+  let stream: DestinationStream = process.stdout;
 
   if (pretty) {
     try {
       // Use synchronous pino-pretty stream to keep execution on main thread.
       // This avoids the worker-thread `transport` issue, allowing OTel to intercept!
-      const prettyFactory = require('pino-pretty');
+      const { default: prettyFactory } = await import('pino-pretty');
       stream = prettyFactory({
         colorize: true,
         translateTime: 'SYS:HH:MM:ss.l',
         ignore: 'pid,hostname',
-      });
+      }) as unknown as DestinationStream;
     } catch {
       // pino-pretty missing (prod mode), fallback to pure JSON stdout
     }

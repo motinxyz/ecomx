@@ -1,32 +1,32 @@
 /**
  * The Data Dictionary (Domain Schema)
- * 
+ *
  * This file strictly scopes every permissible behavior event in the entire Ecomx
- * infrastructure. By centralizing it, we prevent developers from making typos 
- * (e.g. tracking "Add_To_Cart" instead of "CartUpdated"), ensuring our Data 
+ * infrastructure. By centralizing it, we prevent developers from making typos
+ * (e.g. tracking "Add_To_Cart" instead of "CartUpdated"), ensuring our Data
  * Warehouse tables remain perfectly clean for Machine Learning models.
  */
 
-export interface EcommerceEvents {
+export type EcommerceEvents = {
   UserLoggedIn: {
     userId: string;
     method: 'email' | 'google' | 'github';
   };
-  
+
   UserRegistered: {
     userId: string;
     source: 'organic' | 'referral' | 'paid_ads';
   };
-  
+
   ProductViewed: {
-    userId?: string; 
+    userId?: string;
     guestSessionId?: string;
     productId: string;
     category: string;
     priceDisplayed: number;
     viewDurationSeconds?: number;
   };
-  
+
   CartUpdated: {
     userId: string;
     productId: string;
@@ -34,7 +34,7 @@ export interface EcommerceEvents {
     newQuantity: number;
     priceAtAction: number;
   };
-  
+
   OrderPlaced: {
     userId: string;
     orderId: string;
@@ -43,4 +43,4 @@ export interface EcommerceEvents {
     itemsCount: number;
     appliedDiscountCode?: string;
   };
-}
+};
