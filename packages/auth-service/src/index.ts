@@ -13,14 +13,7 @@ import {
 
 import Elysia from 'elysia';
 
-// 1. Initialize distributed tracing (MUST BE FIRST)
-initTelemetry({
-  serviceName: 'auth-service',
-  serviceVersion: '0.0.1',
-  // otlpEndpoint: 'http://localhost:4318',
-});
-
-// 2. Create the service-scoped logger (Wait for dynamic ESM import if prettifying)
+// 1. Create the service-scoped logger (Wait for dynamic ESM import if prettifying)
 const log = await createLogger({
   serviceName: 'auth-service',
   level: process.env.LOG_LEVEL ?? 'info',
