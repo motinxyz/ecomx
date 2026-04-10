@@ -2,18 +2,24 @@
   "name": "@org/source",
   "version": "0.0.0",
   "license": "MIT",
-  "scripts": {},
+  "scripts": {
+    "dev": "nx run-many -t serve --parallel",
+    "test": "nx run-many -t test --parallel",
+    "build": "nx run-many -t build --parallel"
+  },
   "private": true,
-  "dependencies": {},
+  "dependencies": {
+    "elysia": "^1.4.28"
+  },
   "devDependencies": {
     "@nx/js": "22.6.2",
     "@swc-node/register": "1.11.1",
     "@swc/core": "1.15.8",
     "@swc/helpers": "0.5.18",
     "nx": "22.6.2",
-    "prettier": "^2.6.2",
-    "tslib": "^2.3.0",
-    "typescript": "~5.9.2"
+    "prettier": "^2.8.8",
+    "tslib": "^2.8.1",
+    "typescript": "~5.9.3"
   },
   "workspaces": [
     "packages/*"

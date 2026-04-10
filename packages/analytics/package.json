@@ -1,0 +1,23 @@
+{
+  "name": "@ecomx/analytics",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "nx": {
+    "targets": {
+      "test": {
+        "executor": "nx:run-commands",
+        "options": {
+          "command": "bun test",
+          "cwd": "{projectRoot}"
+        }
+      }
+    }
+  }
+}
