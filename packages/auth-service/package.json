@@ -5,6 +5,7 @@
   "type": "module",
   "dependencies": {
     "@ecomx/analytics": "workspace:*",
+    "@ecomx/infra": "workspace:*",
     "@ecomx/observability": "workspace:*"
   },
   "devDependencies": {},

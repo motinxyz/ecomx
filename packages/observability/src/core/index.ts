@@ -1,3 +1,4 @@
+import { addShutdownHook, LifecyclePriority } from '@ecomx/infra';
 import { createResource } from './resource';
 import { createExporters } from './exporters';
 import { getCoreInstrumentations } from './sensors';
@@ -12,9 +13,9 @@ export interface TelemetryConfig {
 
 /**
  * High-level entry point to initialize the full OpenTelemetry stack.
- *
- * Refactored to use a modular internal architecture (Resource, Exporters, SDK).
- * Preserves the original signature for backward compatibility.
+ * 
+ * Automatically registers a shutdown hook with the global Lifecycle registry
+ * to ensure spans and metrics are flushed before the process exits.
  */
 export function initTelemetry(config: TelemetryConfig): {
   shutdown: () => Promise<void>;
@@ -35,19 +36,19 @@ export function initTelemetry(config: TelemetryConfig): {
   const instrumentations = getCoreInstrumentations();
 
   // 4. Boot the SDK
-  // Note: We use a synchronous initialization here to match the project's bootstrap style,
-  // although createSDK internally is async ready.
   const sdkPromise = createSDK({
     resource,
     instrumentations,
     ...exporters,
   });
 
-  // Provide a clean shutdown handle for the caller
-  return {
-    shutdown: async () => {
-      const { shutdown } = await sdkPromise;
-      await shutdown();
-    },
+  const shutdown = async () => {
+    const { shutdown } = await sdkPromise;
+    await shutdown();
   };
+
+  // 5. Auto-register with Lifecycle (Priority 90 - Flush last)
+  addShutdownHook(LifecyclePriority.LATE, `opentelemetry-${serviceName}`, shutdown);
+
+  return { shutdown };
 }

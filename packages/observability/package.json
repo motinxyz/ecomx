@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@elysiajs/opentelemetry": "^1.4.11",
+    "@ecomx/infra": "workspace:*",
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/exporter-logs-otlp-http": "^0.214.0",
     "@opentelemetry/exporter-metrics-otlp-http": "^0.214.0",

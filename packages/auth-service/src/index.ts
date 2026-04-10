@@ -1,5 +1,4 @@
 import {
-  initTelemetry,
   createLogger,
   observabilityPlugin,
   recordLogin,
@@ -11,9 +10,17 @@ import {
   StructuredLogAnalyticsProvider,
 } from '@ecomx/analytics';
 
+import {
+  addShutdownHook,
+  initLifecycleListeners,
+  LifecyclePriority,
+} from '@ecomx/infra';
 import Elysia from 'elysia';
 
-// 1. Create the service-scoped logger (Wait for dynamic ESM import if prettifying)
+// 1. Initialize deterministic shutdown listeners
+initLifecycleListeners();
+
+// 2. Create the service-scoped logger
 const log = await createLogger({
   serviceName: 'auth-service',
   level: process.env.LOG_LEVEL ?? 'info',
@@ -44,6 +51,13 @@ const app = new Elysia()
     reqLog.info({ path: params['*'] }, 'wildcard route hit');
     return params['*'] ?? 'Sorry!';
   });
+
+// 5. Register the Elysia server with the Lifecycle orchestrator
+// Priority: EARLY (10) - Stop taking traffic before we close the DB/Analytics
+addShutdownHook(LifecyclePriority.EARLY, 'elysia-http-server', async () => {
+  log.info('stopping elysia http server...');
+  await app.stop();
+});
 
 app.listen(3000);
 

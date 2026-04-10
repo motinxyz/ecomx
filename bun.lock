@@ -33,13 +33,19 @@
       "version": "0.0.1",
       "dependencies": {
         "@ecomx/analytics": "workspace:*",
+        "@ecomx/infra": "workspace:*",
         "@ecomx/observability": "workspace:*",
       },
+    },
+    "packages/infra": {
+      "name": "@ecomx/infra",
+      "version": "0.0.1",
     },
     "packages/observability": {
       "name": "@ecomx/observability",
       "version": "0.0.1",
       "dependencies": {
+        "@ecomx/infra": "workspace:*",
         "@elysiajs/opentelemetry": "^1.4.11",
         "@opentelemetry/api": "^1.9.1",
         "@opentelemetry/exporter-logs-otlp-http": "^0.214.0",
@@ -270,6 +276,8 @@
     "@ecomx/analytics": ["@ecomx/analytics@workspace:packages/analytics"],
 
     "@ecomx/auth-service": ["@ecomx/auth-service@workspace:packages/auth-service"],
+
+    "@ecomx/infra": ["@ecomx/infra@workspace:packages/infra"],
 
     "@ecomx/observability": ["@ecomx/observability@workspace:packages/observability"],
 
