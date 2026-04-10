@@ -3,6 +3,7 @@ import {
   createLogger,
   observabilityPlugin,
   recordLogin,
+  opentelemetry,
 } from '@ecomx/observability';
 
 import {
@@ -32,7 +33,9 @@ const analytics = createAnalyticsClient([new StructuredLogAnalyticsProvider()]);
 // 4. Import and initialize Elysia
 
 const app = new Elysia()
-  // Use the DIY observability plugin
+  // 1. Official Plugin: Automatically tracks how long routes take (Tracing)
+  .use(opentelemetry())
+  // 2. DIY Observability Plugin: Attaches the Pino logger (Logging)
   .use(observabilityPlugin(log))
   .get('/*', ({ params, logger: reqLog }) => {
     // Record login metric (for System Dashboards - DevOps)
