@@ -1,14 +1,14 @@
-import pino, { type Logger, type LoggerOptions, type DestinationStream } from 'pino';
+import pino from 'pino';
+import type { Logger, LoggerOptions } from 'pino';
+import { LogLevel } from './schema';
 
-export interface LoggerConfig {
+export interface LogConfig {
   serviceName: string;
   level?: string;
-  /** Set to true for pretty-printed dev output. In production, leave false for JSON. */
-  pretty?: boolean;
 }
 
 /**
- * Create a service-scoped Pino logger.
+ * Creates a pre-configured Pino logger.
  *
  * How log shipping works:
  * 1. PinoInstrumentation (configured in telemetry.ts) monkey-patches Pino
@@ -16,34 +16,16 @@ export interface LoggerConfig {
  * 3. The log record is forwarded to BatchLogRecordProcessor → OTLPLogExporter
  * 4. trace_id and span_id are injected automatically from the active OTel context
  */
-export async function createLogger(config: LoggerConfig): Promise<Logger> {
-  const { serviceName, level = 'info', pretty = false } = config;
+export function createLogger(config: LogConfig): Logger {
+  const { serviceName, level = LogLevel.INFO } = config;
 
   const options: LoggerOptions = {
     level,
-    // Redact sensitive fields from log output
-    redact: ['req.headers.authorization', 'req.headers.cookie'],
+    base: {
+      service: serviceName,
+    },
+    redact: ['req.headers.authorization', 'res.headers.authorization'],
   };
 
-  let stream: DestinationStream = process.stdout;
-
-  if (pretty) {
-    try {
-      // Use synchronous pino-pretty stream to keep execution on main thread.
-      // This avoids the worker-thread `transport` issue, allowing OTel to intercept!
-      const { default: prettyFactory } = await import('pino-pretty');
-      stream = prettyFactory({
-        colorize: true,
-        translateTime: 'SYS:HH:MM:ss.l',
-        ignore: 'pid,hostname',
-      }) as unknown as DestinationStream;
-    } catch {
-      // pino-pretty missing (prod mode), fallback to pure JSON stdout
-    }
-  }
-
-  const baseLogger = pino(options, stream);
-
-  // Child logger binds `service` to every log line from this instance
-  return baseLogger.child({ service: serviceName });
+  return pino(options, pino.destination({ dest: 1, sync: true }));
 }

@@ -1,4 +1,4 @@
-import { initTelemetry } from './core';
+import { initTelemetry } from './telemetry';
 
 /**
  * Instrumentation Script
@@ -32,6 +32,6 @@ initTelemetry({
   otlpEndpoint,
 });
 
-console.log(
-  `[Observability] Telemetry engine initialized for "${serviceName}" via preload.`
+process.stdout.write(
+  `[Observability] Telemetry engine initialized for "${serviceName}" via preload.\n`
 );

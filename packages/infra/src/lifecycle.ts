@@ -3,6 +3,8 @@
  * Lower numbers run earlier in the shutdown sequence.
  */
 export const LifecyclePriority = {
+  /** Mark as unhealthy/not ready (Inform Load Balancer) */
+  PROBE_OFF: 0,
   /** Stop external traffic ingress first (e.g. Server.stop) */
   EARLY: 10,
   /** Default priority for internal business logic/queues */
@@ -13,23 +15,33 @@ export const LifecyclePriority = {
   LATE: 90,
 } as const;
 
+export type LifecyclePriority = typeof LifecyclePriority[keyof typeof LifecyclePriority];
+
 export type ShutdownHook = () => Promise<void> | void;
 
 interface HookEntry {
+  priority: LifecyclePriority;
   name: string;
-  priority: number;
   fn: ShutdownHook;
 }
 
-// Module-level state (private to this file)
+// Module-level state
 const hooks: HookEntry[] = [];
 let isShuttingDown = false;
 
 /**
+ * Returns true if the process is currently in a termination sequence.
+ * Used by the Readiness engine to instantly fail external probes.
+ */
+export function isCurrentlyShuttingDown() {
+  return isShuttingDown;
+}
+
+/**
  * Register a new shutdown hook.
  */
-export function addShutdownHook(priority: number, name: string, fn: ShutdownHook) {
-  hooks.push({ name, priority, fn });
+export function addShutdownHook(hook: HookEntry) {
+  hooks.push(hook);
 }
 
 /**
@@ -50,25 +62,29 @@ export async function startShutdown() {
     process.exit(1);
   }, 25000);
 
-  for (const hook of sortedHooks) {
-    process.stdout.write(`[Lifecycle] Executing hook: ${hook.name} (Priority ${hook.priority})...\n`);
+  for (const { priority, name, fn } of sortedHooks) {
+    process.stdout.write(
+      `[Lifecycle] Executing hook: ${name} (Priority ${priority})...\n`
+    );
     try {
-      await hook.fn();
+      await fn();
     } catch (err) {
-      process.stderr.write(`[Lifecycle] Error in hook "${hook.name}": ${err}\n`);
+      process.stderr.write(
+        `[Lifecycle] Error in hook "${name}": ${err}\n`
+      );
     }
   }
 
-  process.stdout.write('[Lifecycle] All hooks executed. Bye!\n\n');
+  process.stdout.write('[Lifecycle] All hooks executed!\n\n');
   clearTimeout(timeout);
-  
+
   // Give stdout a tiny bit of time to flush before hard exit
-  await new Promise(r => setTimeout(r, 50));
+  await new Promise((r) => setTimeout(r, 50));
   process.exit(0);
 }
 
 /**
- * Attach SIGTERM/SIGINT listeners to the process.
+ * Attach SIGTERM/SIGINT listeners.
  */
 export function initLifecycleListeners() {
   process.on('SIGTERM', () => startShutdown());

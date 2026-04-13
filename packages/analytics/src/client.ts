@@ -1,4 +1,3 @@
-import type { EcommerceEvents } from './events';
 import type { AnalyticsProvider } from './types';
 
 /**
@@ -13,15 +12,12 @@ import type { AnalyticsProvider } from './types';
  * e.g. NodeEnv="dev" array contains [StructuredLogProvider]
  *      NodeEnv="prod" array contains [MixpanelProvider, KafkaProvider]
  */
-export function createAnalyticsClient(providers: AnalyticsProvider[] = []) {
+export function createAnalyticsClient(providers: AnalyticsProvider[] = []): AnalyticsProvider {
   return {
     /**
      * Dispatches the heavily-typed event to all active providers.
      */
-    track<K extends keyof EcommerceEvents>(
-      eventName: K,
-      properties: EcommerceEvents[K]
-    ): void {
+    track: (eventName, properties) => {
       // Fire and forget across all providers. 
       // They are executed concurrently so one slow provider doesn't block the next.
       for (const provider of providers) {

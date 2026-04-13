@@ -1,0 +1,54 @@
+/**
+ * The standard enterprise dictionary for HTTP Status Codes.
+ * Use this to completely eliminate Magic Numbers from your codebase.
+ */
+export const HttpStatus = {
+  BAD_REQUEST: 400,
+  UNAUTHORIZED: 401,
+  FORBIDDEN: 403,
+  NOT_FOUND: 404,
+  CONFLICT: 409,
+  UNPROCESSABLE_ENTITY: 422,
+  TOO_MANY_REQUESTS: 429,
+  INTERNAL_SERVER_ERROR: 500,
+  NOT_IMPLEMENTED: 501,
+  BAD_GATEWAY: 502,
+  SERVICE_UNAVAILABLE: 503,
+  GATEWAY_TIMEOUT: 504,
+} as const;
+
+export type HttpStatusCode = (typeof HttpStatus)[keyof typeof HttpStatus];
+
+/**
+ * The Global Base Error that all microservice errors must extend cleanly.
+ * Strictly enforces HTTP Status Codes and Operational Safety tracking.
+ */
+export abstract class BaseAppError extends Error {
+  public readonly isOperational: boolean;
+  public readonly statusCode: HttpStatusCode;
+
+  constructor(
+    message: string,
+    statusCode: HttpStatusCode,
+    isOperational = true
+  ) {
+    super(message);
+    this.statusCode = statusCode;
+    this.isOperational = isOperational;
+  }
+}
+
+/**
+ * Triggers when an external dependency (Database, Redis) fails to respond to a ping.
+ */
+export class ReadinessTimeoutError extends BaseAppError {
+  constructor(ms: number) {
+    // 503 Service Unavailable
+    super(
+      `Readiness check timed out after ${ms}ms`,
+      HttpStatus.SERVICE_UNAVAILABLE,
+      true
+    );
+    this.name = 'ReadinessTimeoutError';
+  }
+}

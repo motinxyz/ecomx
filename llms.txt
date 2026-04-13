@@ -1,0 +1,21 @@
+# Ecomx Agentic Context
+
+Welcome, AI Agent! You are working in the `ecomx` monorepo. This repository follows strict 2026 enterprise architectural patterns. You must adhere to the rules in this document at all times.
+
+## 1. Monorepo Principles
+- **No Ghost Dependencies**: Every microservice (e.g. `packages/auth-service`) must explicitly define its own dependencies in its `package.json`. Do not hoist application dependencies to the root `package.json`.
+- **Pure Barrel Exports**: `index.ts` files must ONLY contain export statements (`export * from './file'`). Never put runtime executable code inside an `index.ts`.
+- **Microservice Isolation**: Domain logic stays inside the microservice. Infrastructure packages must be completely blind to business logic.
+
+## 2. Observability & Telemetry Rulebook
+- **Domain-Owned Metrics**: Do NOT put business counters or histograms into `@ecomx/observability` or `@ecomx/analytics`. Each microservice creates and owns its own OTel meters locally (e.g. `packages/auth-service/src/metrics.ts`).
+- **Synchronous Logging**: We use `Pino`. The logger instantiation MUST be synchronous. Do NOT configure `pino-pretty` inside the TypeScript code, as spawning worker threads breaks OpenTelemetry `AsyncLocalStorage` context propagation. Instead, format logs via the CLI pipe (`| bunx pino-pretty`).
+- **Strict Dictionaries**: Never use hardcoded strings for telemetry keys or statuses. Always import from `@ecomx/infra` (e.g. `InfraAttr`, `Status`) or `@ecomx/observability` (`ObservabilityAttr`).
+
+## 3. Environment Variable Strategy
+- **Service-by-Service**: Configuration is highly decentralized. Never create a global `.env` validation schema for the entire monorepo.
+- **Validation**: Each microservice must validate its own required environment variables strictly (using a local Zod schema, typically in `src/env.ts`) at boot time natively before starting up its routing server.
+
+## 4. Documentation
+- **No External Wikis**: Use Markdown ADRs (Architecture Decision Records) in `docs/adr/`.
+- **Package Contracts**: Every package must have a `README.md` defining its responsibilities and explicit boundaries ("What is Forbidden Here").

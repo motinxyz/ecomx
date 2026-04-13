@@ -6,7 +6,9 @@
   "dependencies": {
     "@ecomx/analytics": "workspace:*",
     "@ecomx/infra": "workspace:*",
-    "@ecomx/observability": "workspace:*"
+    "@ecomx/observability": "workspace:*",
+    "@opentelemetry/api": "^1.9.1",
+    "elysia": "^1.4.28"
   },
   "devDependencies": {},
   "nx": {
@@ -14,7 +16,7 @@
       "serve": {
         "executor": "nx:run-commands",
         "options": {
-          "command": "OTEL_SERVICE_NAME=auth-service bun run --preload @ecomx/observability/instrumentation --watch src/index.ts",
+          "command": "OTEL_SERVICE_NAME=auth-service bun run --preload @ecomx/observability/instrumentation --watch src/index.ts | bunx pino-pretty",
           "cwd": "{projectRoot}"
         }
       },

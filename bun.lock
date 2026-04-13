@@ -27,6 +27,12 @@
     "packages/analytics": {
       "name": "@ecomx/analytics",
       "version": "0.0.1",
+      "dependencies": {
+        "@ecomx/infra": "workspace:*",
+      },
+      "devDependencies": {
+        "pino": "^10.3.1",
+      },
     },
     "packages/auth-service": {
       "name": "@ecomx/auth-service",
@@ -35,6 +41,8 @@
         "@ecomx/analytics": "workspace:*",
         "@ecomx/infra": "workspace:*",
         "@ecomx/observability": "workspace:*",
+        "@opentelemetry/api": "^1.9.1",
+        "elysia": "^1.4.28",
       },
     },
     "packages/infra": {
@@ -61,7 +69,6 @@
         "@opentelemetry/sdk-node": "^0.214.0",
         "@opentelemetry/sdk-trace-base": "^2.6.1",
         "@opentelemetry/sdk-trace-node": "^2.6.1",
-        "@opentelemetry/semantic-conventions": "^1.40.0",
         "pino": "^10.3.1",
       },
       "devDependencies": {

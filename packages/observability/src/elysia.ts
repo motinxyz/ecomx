@@ -1,45 +1,47 @@
 import type { Logger } from 'pino';
 import { Elysia } from 'elysia';
+import { InfraAttr } from '@ecomx/infra';
+import { ObservabilityAttr } from './schema';
 
 /**
  * Elysia observability plugin.
  *
- * Decorates `ctx.logger` with a Pino child logger and hooks into
- * the request lifecycle for automatic request/response logging.
- *
- * Uses `.as('global')` so these hooks apply to ALL routes in the app,
- * not just routes defined inside this plugin instance.
+ * Decorates every request context with a logger and automatically
+ * captures request lifecycle events using categorized semantic tags.
  */
-export function observabilityPlugin(logger: Logger) {
+export function elysiaObservabilityPlugin(logger: Logger) {
   return new Elysia({ name: 'observability' })
     .decorate('logger', logger)
     .onRequest(({ request, logger }) => {
       logger.info(
         {
-          method: request.method,
-          url: request.url,
+          [ObservabilityAttr.METHOD]: request.method,
+          [ObservabilityAttr.URL]: request.url,
         },
-        'request started',
+        'request started'
       );
     })
     .onAfterResponse(({ request, logger, set }) => {
       logger.info(
         {
-          method: request.method,
-          url: request.url,
-          status: set.status,
+          [ObservabilityAttr.METHOD]: request.method,
+          [ObservabilityAttr.URL]: request.url,
+          [ObservabilityAttr.STATUS_CODE]: set.status,
         },
-        'request completed',
+        'request completed'
       );
     })
     .onError(({ request, logger, error }) => {
+      // Cast to any to safely access message/name on varying Elysia error types
+      const err = error as any;
       logger.error(
         {
-          method: request.method,
-          url: request.url,
-          err: error,
+          [ObservabilityAttr.METHOD]: request.method,
+          [ObservabilityAttr.URL]: request.url,
+          [InfraAttr.ERROR_MESSAGE]: err?.message || String(error),
+          [InfraAttr.ERROR_TYPE]: err?.name || 'Error',
         },
-        'request failed',
+        'request failed'
       );
     })
     .as('global');
