@@ -9,7 +9,7 @@ import {
 
 import {
   createAnalyticsClient,
-  StructuredLogAnalyticsProvider,
+  // StructuredLogAnalyticsProvider,
   EventName,
   AuthMethod,
   PinoAnalyticsProvider,
@@ -23,6 +23,8 @@ import {
   LifecyclePriority,
   InfraAttr,
   Status,
+  InfraClient,
+  addReadinessCheck,
 } from '@ecomx/infra';
 import Elysia from 'elysia';
 
@@ -39,6 +41,25 @@ const log = createLogger({
 // const analytics = createAnalyticsClient([new StructuredLogAnalyticsProvider()]);
 const analytics = createAnalyticsClient([new PinoAnalyticsProvider(log)]);
 
+// 4. Initialize external dependencies with pure Resilience
+const paymentClient = new InfraClient({
+  baseUrl: 'https://api.stripe.com/v1',
+  resilience: { maxRetries: 2, timeoutMs: 4000 },
+  onStateChange: (state, name) => {
+    // We log the telemetry without circular dependencies!
+    log.error(
+      { [InfraAttr.COMPONENT]: 'circuit-breaker', state },
+      `Dependency ${name} transitioned to ${state}`,
+    );
+  },
+});
+
+// 5. Connect the Circuit Breaker to K8s Readiness (if Stripe is fully down, take us offline!)
+addReadinessCheck({
+  name: 'stripe-api',
+  check: () => paymentClient.getBreakerState() !== 1, // 1 is OPEN state
+});
+
 const app = new Elysia()
   // Official Plugin: Automatically tracks how long routes take (Tracing)
   .use(opentelemetry())
@@ -46,6 +67,34 @@ const app = new Elysia()
   .use(elysiaObservabilityPlugin(log))
   // Health Probes: Liveness & Readiness checks
   .use(healthPlugin())
+
+  // Real-world lifecycle example
+  .post('/checkout', async ({ body, request, logger: reqLog }) => {
+    reqLog.info('Initiating external payment call...');
+
+    // The request.signal automatically aborts if the Elysia client drops connection.
+    // We pass it to the paymentClient so the Retry engine inside Cockatiel knows to stop.
+    try {
+      const receipt = await paymentClient.post('/charges', body, {
+        signal: request.signal,
+        idempotencyKey: crypto.randomUUID(),
+      });
+      return { success: true, receipt };
+    } catch (err: unknown) {
+      // The ResilienceError (503) or FetchClientError (502) bubbles up cleanly
+      // We narrow the type from "unknown" to an object we can log safely
+      const errorData =
+        err instanceof Error
+          ? { name: err.name, message: err.message, stack: err.stack }
+          : String(err);
+      reqLog.error(
+        { err: errorData },
+        'Payment processing failed due to upstream error',
+      );
+      throw err;
+    }
+  })
+
   .get('/*', ({ params, logger: reqLog }) => {
     // Record login metric
     recordLogin(Status.SUCCESS);
@@ -59,7 +108,7 @@ const app = new Elysia()
     // Use ObservabilityAttr for technical request logging
     reqLog.info(
       { [ObservabilityAttr.ROUTE]: params['*'] },
-      'wildcard route hit'
+      'wildcard route hit',
     );
     return params['*'] ?? 'Sorry!';
   });

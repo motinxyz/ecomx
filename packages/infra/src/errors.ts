@@ -52,3 +52,35 @@ export class ReadinessTimeoutError extends BaseAppError {
     this.name = 'ReadinessTimeoutError';
   }
 }
+
+export class ResilienceError extends BaseAppError {
+  constructor(
+    message: string,
+    originalErrorName: string,
+    statusCode: HttpStatusCode = HttpStatus.SERVICE_UNAVAILABLE,
+  ) {
+    super(
+      `Resilience layer rejected call: ${message} [Reason: ${originalErrorName}]`,
+      statusCode,
+      true,
+    );
+    this.name = 'ResilienceError';
+  }
+}
+
+export class FetchClientError extends BaseAppError {
+  /** Whether this error should trigger retries. 4xx client errors are non-retryable. */
+  public readonly retryable: boolean;
+
+  constructor(
+    message: string,
+    statusCode: number = HttpStatus.INTERNAL_SERVER_ERROR,
+    retryable = true,
+  ) {
+    // We cast to HttpStatusCode because an upstream server might theoretically
+    // return an obscure code (like 525) that isn't explicitly in our HttpStatus dictionary.
+    super(message, statusCode as HttpStatusCode, true);
+    this.name = 'FetchClientError';
+    this.retryable = retryable;
+  }
+}
