@@ -9,23 +9,29 @@ import {
   wrap,
   ExponentialBackoff,
   SamplingBreaker,
+  CircuitState,
 } from 'cockatiel';
 import { ResilienceError, BaseAppError, HttpStatus } from './errors';
 
-export type BreakerState = 'OPEN' | 'HALF_OPEN' | 'CLOSED';
+export { CircuitState };
+
+
 
 export interface ResilienceConfig {
   /** Human-readable identifier (e.g., 'bkash-api', 'billing-service') */
   name: string;
 
-  /** Max retry attempts before giving up. Default: 2 */
-  maxRetries?: number;
+  /** Total number of attempts (initial + retries). Default: 3 */
+  maxAttempts?: number;
 
   /** Timeout per individual attempt in ms. Default: 5000 */
   timeoutMs?: number;
 
   /** Failure rate threshold (0–1) to trip the breaker. Default: 0.5 (50%) */
   threshold?: number;
+
+  /** Minimum Requests Per Second required before the breaker starts sampling. Default: 5 */
+  minimumRps?: number;
 
   /** Rolling window duration for sampling failures in ms. Default: 10_000 */
   samplingDurationMs?: number;
@@ -37,21 +43,34 @@ export interface ResilienceConfig {
    * Injected callback for state change telemetry.
    * Consumers wire this to their observability layer — no circular dependency.
    */
-  onStateChange?: (state: BreakerState, name: string) => void;
+  onStateChange?: (state: CircuitState, name: string) => void;
+
+  /**
+   * Emitted when Cockatiel schedules a retry attempt.
+   * Wire this to a Prometheus counter to track retry volume per dependency.
+   */
+  onRetry?: (info: { name: string; attempt: number; delay: number; reason: string }) => void;
+
+  /**
+   * Emitted when an individual attempt exceeds the timeout deadline.
+   * Wire this to a Prometheus counter to track timeout frequency.
+   */
+  onTimeout?: (info: { name: string; timeoutMs: number }) => void;
 }
 
 /**
  * Creates a composable resilience policy: Timeout → Retry → Circuit Breaker.
  *
  * This is the pure policy engine. It has zero knowledge of HTTP or fetch.
- * The InfraClient consumes this to protect outbound network calls.
+ * The HttpClient consumes this to protect outbound network calls.
  */
 export function createResiliencePolicy(config: ResilienceConfig) {
   const {
     name,
-    maxRetries = 2,
+    maxAttempts = 3,
     timeoutMs = 5000,
     threshold = 0.5,
+    minimumRps = 5,
     samplingDurationMs = 10_000,
     breakerCooldownMs = 30_000,
     onStateChange,
@@ -65,15 +84,18 @@ export function createResiliencePolicy(config: ResilienceConfig) {
   // 4xx client errors (e.g., 400 Bad Request, 401 Unauthorized) bypass both
   // the retry engine AND the circuit breaker statistics entirely.
   const retryableFilter = handleWhen((err) => {
-    if ('retryable' in err && (err as { retryable: boolean }).retryable === false) {
+    if (
+      'retryable' in err &&
+      (err as { retryable: boolean }).retryable === false
+    ) {
       return false;
     }
     return true;
   });
 
-  // 2. RETRY — exponential backoff (500ms → 1s → 2s) before giving up.
+  // 2. RETRY — exponential backoff (defaults to starting at 128ms) before giving up.
   const rPolicy = retry(retryableFilter, {
-    maxAttempts: maxRetries,
+    maxAttempts: maxAttempts,
     backoff: new ExponentialBackoff(),
   });
 
@@ -81,14 +103,37 @@ export function createResiliencePolicy(config: ResilienceConfig) {
   // Trips when `threshold` % of calls fail within `samplingDurationMs`.
   const cbPolicy = circuitBreaker(retryableFilter, {
     halfOpenAfter: breakerCooldownMs,
-    breaker: new SamplingBreaker({ threshold, duration: samplingDurationMs }),
+    breaker: new SamplingBreaker({
+      threshold,
+      duration: samplingDurationMs,
+      minimumRps,
+    }),
   });
 
   // Wire state change events to the injected callback (Inversion of Control)
   if (onStateChange) {
-    cbPolicy.onBreak(() => onStateChange('OPEN', name));
-    cbPolicy.onHalfOpen(() => onStateChange('HALF_OPEN', name));
-    cbPolicy.onReset(() => onStateChange('CLOSED', name));
+    cbPolicy.onBreak(() => onStateChange(CircuitState.Open, name));
+    cbPolicy.onHalfOpen(() => onStateChange(CircuitState.HalfOpen, name));
+    cbPolicy.onReset(() => onStateChange(CircuitState.Closed, name));
+  }
+
+  // Wire retry telemetry — fires BEFORE each retry delay begins.
+  if (config.onRetry) {
+    rPolicy.onRetry((event) => {
+      config.onRetry!({
+        name,
+        attempt: event.attempt,
+        delay: event.delay,
+        reason: 'error' in event ? event.error.message : 'Retryable error encountered',
+      });
+    });
+  }
+
+  // Wire timeout telemetry — fires when an individual attempt exceeds the deadline.
+  if (config.onTimeout) {
+    tPolicy.onTimeout(() => {
+      config.onTimeout!({ name, timeoutMs });
+    });
   }
 
   // 4. COMPOSE — order matters: breaker wraps retry wraps timeout.
@@ -133,7 +178,11 @@ export function createResiliencePolicy(config: ResilienceConfig) {
 
         // 3. Non-retryable errors (e.g., 4xx) bypassed the retry engine.
         //    Let them pass through to the consumer without wrapping.
-        if (err instanceof Error && 'retryable' in err && (err as { retryable: boolean }).retryable === false) {
+        if (
+          err instanceof Error &&
+          'retryable' in err &&
+          (err as { retryable: boolean }).retryable === false
+        ) {
           throw err;
         }
 
@@ -141,7 +190,7 @@ export function createResiliencePolicy(config: ResilienceConfig) {
         //    Wrap with context so consumers know retries were attempted.
         if (err instanceof BaseAppError) {
           throw new ResilienceError(
-            `[${name}] failed after ${maxRetries} retries: ${err.message}`,
+            `[${name}] failed after ${maxAttempts} attempts: ${err.message}`,
             err.name,
             err.statusCode,
           );
@@ -150,7 +199,7 @@ export function createResiliencePolicy(config: ResilienceConfig) {
         // 5. Unknown error — wrap with generic 503
         if (err instanceof Error) {
           throw new ResilienceError(
-            `[${name}] failed after ${maxRetries} retries: ${err.message}`,
+            `[${name}] failed after ${maxAttempts} attempts: ${err.message}`,
             err.name,
           );
         }

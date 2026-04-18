@@ -23,8 +23,10 @@ import {
   LifecyclePriority,
   InfraAttr,
   Status,
-  InfraClient,
+  HttpClient,
   addReadinessCheck,
+  CircuitState,
+  createHttpClientTelemetry,
 } from '@ecomx/infra';
 import Elysia from 'elysia';
 
@@ -42,22 +44,19 @@ const log = createLogger({
 const analytics = createAnalyticsClient([new PinoAnalyticsProvider(log)]);
 
 // 4. Initialize external dependencies with pure Resilience
-const paymentClient = new InfraClient({
+const paymentClient = new HttpClient({
   baseUrl: 'https://api.stripe.com/v1',
-  resilience: { maxRetries: 2, timeoutMs: 4000 },
-  onStateChange: (state, name) => {
-    // We log the telemetry without circular dependencies!
-    log.error(
-      { [InfraAttr.COMPONENT]: 'circuit-breaker', state },
-      `Dependency ${name} transitioned to ${state}`,
-    );
+  resilience: {
+    maxAttempts: 2,
+    timeoutMs: 4000,
+    ...createHttpClientTelemetry(log),
   },
 });
 
 // 5. Connect the Circuit Breaker to K8s Readiness (if Stripe is fully down, take us offline!)
 addReadinessCheck({
   name: 'stripe-api',
-  check: () => paymentClient.getBreakerState() !== 1, // 1 is OPEN state
+  check: () => paymentClient.getBreakerState() !== CircuitState.Open,
 });
 
 const app = new Elysia()
@@ -124,6 +123,4 @@ addShutdownHook({
 });
 
 app.listen(3000);
-
-// Use InfraAttr for the core process info (port)
 log.info({ [InfraAttr.PORT]: 3000 }, 'auth-service started');

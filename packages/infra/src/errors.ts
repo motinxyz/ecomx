@@ -33,6 +33,7 @@ export abstract class BaseAppError extends Error {
     isOperational = true
   ) {
     super(message);
+    this.name = this.constructor.name;
     this.statusCode = statusCode;
     this.isOperational = isOperational;
   }

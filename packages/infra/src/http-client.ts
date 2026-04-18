@@ -1,11 +1,17 @@
 import {
   createResiliencePolicy,
   type ResilienceConfig,
-  type BreakerState,
 } from './resilience';
 import { FetchClientError, HttpStatus } from './errors';
 
-export interface InfraClientConfig {
+/** Shared options for HTTP methods that carry a request body (POST, PUT, PATCH). */
+export interface MutationRequestOpts {
+  signal?: AbortSignal;
+  headers?: Record<string, string>;
+  idempotencyKey?: string;
+}
+
+export interface HttpClientConfig {
   /** The base URL for the external service (e.g., 'https://api.stripe.com') */
   baseUrl: string;
 
@@ -29,13 +35,10 @@ export interface InfraClientConfig {
   ) => Promise<Partial<RequestInit>> | Partial<RequestInit>;
 
   /**
-   * Overrides for the resilience policy (timeout, retries, etc.).
-   * The breaker strictly uses the `baseUrl` as its 'name' identifier.
+   * Configuration for the underlying resilience policy (timeouts, retries, circuit breaker).
+   * Note: The breaker strictly uses the `baseUrl` as its 'name' identifier.
    */
-  resilience?: Omit<Partial<ResilienceConfig>, 'name' | 'onStateChange'>;
-
-  /** Hook for observability. Emits OPEN/HALF_OPEN/CLOSED state changes. */
-  onStateChange?: (state: BreakerState, baseUrl: string) => void;
+  resilience?: Partial<Omit<ResilienceConfig, 'name'>>;
 }
 
 /**
@@ -45,20 +48,19 @@ export interface InfraClientConfig {
  * Provides out-of-the-box Circuit Breaking, Exponential Backoff Retries, and
  * Aggressive Timeouts to protect the Node event loop from external network failures.
  */
-export class InfraClient {
-  private readonly policy;
+export class HttpClient {
+  private readonly policy: ReturnType<typeof createResiliencePolicy>;
   private readonly baseUrl: string;
   private readonly defaultHeaders: Record<string, string>;
-  private readonly beforeRequest?: InfraClientConfig['beforeRequest'];
+  private readonly beforeRequest?: HttpClientConfig['beforeRequest'];
 
-  constructor(config: InfraClientConfig) {
+  constructor(config: HttpClientConfig) {
     this.baseUrl = config.baseUrl;
     this.defaultHeaders = config.defaultHeaders ?? {};
     this.beforeRequest = config.beforeRequest;
 
     this.policy = createResiliencePolicy({
       name: config.baseUrl,
-      onStateChange: config.onStateChange,
       ...config.resilience,
     });
   }
@@ -153,16 +155,15 @@ export class InfraClient {
     );
   }
 
-  /** Shared options for HTTP methods that carry a request body. */
-  /** Performs a resilient POST request with an implicit JSON payload. */
-  async post<T>(
+  /**
+   * Internal helper for HTTP methods that carry a body (POST, PUT, PATCH).
+   * Standardizes JSON serialization and Idempotency-Key injection.
+   */
+  private async executeMutation<T>(
+    method: 'POST' | 'PUT' | 'PATCH',
     path: string,
     body: unknown,
-    opts?: {
-      signal?: AbortSignal;
-      headers?: Record<string, string>;
-      idempotencyKey?: string;
-    },
+    opts?: MutationRequestOpts,
   ): Promise<T> {
     const headers: Record<string, string> = {
       ...opts?.headers,
@@ -173,57 +174,36 @@ export class InfraClient {
     }
     return this.executeFetch<T>(
       path,
-      { method: 'POST', body: JSON.stringify(body), headers },
+      { method, body: JSON.stringify(body), headers },
       opts?.signal,
     );
+  }
+
+  /** Performs a resilient POST request with an implicit JSON payload. */
+  async post<T>(
+    path: string,
+    body: unknown,
+    opts?: MutationRequestOpts,
+  ): Promise<T> {
+    return this.executeMutation<T>('POST', path, body, opts);
   }
 
   /** Performs a resilient PUT request with an implicit JSON payload. */
   async put<T>(
     path: string,
     body: unknown,
-    opts?: {
-      signal?: AbortSignal;
-      headers?: Record<string, string>;
-      idempotencyKey?: string;
-    },
+    opts?: MutationRequestOpts,
   ): Promise<T> {
-    const headers: Record<string, string> = {
-      ...opts?.headers,
-      'Content-Type': 'application/json',
-    };
-    if (opts?.idempotencyKey) {
-      headers['Idempotency-Key'] = opts.idempotencyKey;
-    }
-    return this.executeFetch<T>(
-      path,
-      { method: 'PUT', body: JSON.stringify(body), headers },
-      opts?.signal,
-    );
+    return this.executeMutation<T>('PUT', path, body, opts);
   }
 
   /** Performs a resilient PATCH request with an implicit JSON payload. */
   async patch<T>(
     path: string,
     body: unknown,
-    opts?: {
-      signal?: AbortSignal;
-      headers?: Record<string, string>;
-      idempotencyKey?: string;
-    },
+    opts?: MutationRequestOpts,
   ): Promise<T> {
-    const headers: Record<string, string> = {
-      ...opts?.headers,
-      'Content-Type': 'application/json',
-    };
-    if (opts?.idempotencyKey) {
-      headers['Idempotency-Key'] = opts.idempotencyKey;
-    }
-    return this.executeFetch<T>(
-      path,
-      { method: 'PATCH', body: JSON.stringify(body), headers },
-      opts?.signal,
-    );
+    return this.executeMutation<T>('PATCH', path, body, opts);
   }
 
   /** Performs a resilient DELETE request. */
@@ -239,8 +219,14 @@ export class InfraClient {
   }
 
   /**
-   * Provides the raw Cockatiel CircuitBreaker state (0=Closed, 1=Open, 2=HalfOpen).
-   * Inject this deeply into K8s Readiness Probes.
+   * Exposes the raw Cockatiel CircuitBreaker state.
+   * Compare against the exported `CircuitState` enum for readability.
+   *
+   * @example
+   * ```typescript
+   * import { CircuitState } from '@ecomx/infra';
+   * const isHealthy = client.getBreakerState() !== CircuitState.Open;
+   * ```
    */
   getBreakerState() {
     return this.policy.getBreakerState();
