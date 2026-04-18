@@ -12,6 +12,12 @@ export interface MutationRequestOpts {
 }
 
 export interface HttpClientConfig {
+  /** 
+   * Logical, human-readable identifier for this dependency (e.g., 'stripe-api', 'inventory-service').
+   * Used for metrics, circuit breakers, and logs. Do NOT use raw URLs.
+   */
+  name: string;
+
   /** The base URL for the external service (e.g., 'https://api.stripe.com') */
   baseUrl: string;
 
@@ -60,7 +66,7 @@ export class HttpClient {
     this.beforeRequest = config.beforeRequest;
 
     this.policy = createResiliencePolicy({
-      name: config.baseUrl,
+      name: config.name,
       ...config.resilience,
     });
   }
@@ -74,7 +80,8 @@ export class HttpClient {
     init: RequestInit,
     signal?: AbortSignal,
   ): Promise<T> {
-    const url = `${this.baseUrl}${path}`;
+    // Safely join baseUrl and path, guaranteeing exactly one slash between them.
+    const url = `${this.baseUrl.replace(/\/$/, '')}/${path.replace(/^\//, '')}`;
 
     return this.policy.execute(async (policySignal) => {
       // Assemble the base request from defaults + per-call overrides.
@@ -130,16 +137,27 @@ export class HttpClient {
         );
       }
 
-      // Safely parse JSON — protect against malformed responses from upstream.
-      try {
-        return (await response.json()) as T;
-      } catch {
-        throw new FetchClientError(
-          `Failed to parse JSON response from ${url}`,
-          HttpStatus.BAD_GATEWAY,
-          false,
-        );
+      // Handle empty responses (like 204 No Content) gracefully
+      if (response.status === 204 || response.headers.get('content-length') === '0') {
+        return undefined as unknown as T;
       }
+
+      // Check the Content-Type to avoid crashing on plaintext or HTML error pages
+      const contentType = response.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        try {
+          return (await response.json()) as T;
+        } catch {
+          throw new FetchClientError(
+            `Failed to parse JSON response from ${url}`,
+            HttpStatus.BAD_GATEWAY,
+            false,
+          );
+        }
+      }
+
+      // Fallback for non-JSON responses (text, html, etc.)
+      return (await response.text()) as unknown as T;
     }, signal);
   }
 

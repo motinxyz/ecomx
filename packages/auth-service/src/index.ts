@@ -34,22 +34,23 @@ import Elysia from 'elysia';
 initLifecycleListeners();
 
 // 2. Create the service-scoped logger
-const log = createLogger({
+const logger = createLogger({
   serviceName: 'auth-service',
   level: process.env.LOG_LEVEL ?? LogLevel.INFO,
 });
 
 // 3. Initialize the Analytics Orchestrator with our strategy
 // const analytics = createAnalyticsClient([new StructuredLogAnalyticsProvider()]);
-const analytics = createAnalyticsClient([new PinoAnalyticsProvider(log)]);
+const analytics = createAnalyticsClient([new PinoAnalyticsProvider(logger)]);
 
 // 4. Initialize external dependencies with pure Resilience
 const paymentClient = new HttpClient({
+  name: 'stripe-api',
   baseUrl: 'https://api.stripe.com/v1',
   resilience: {
     maxAttempts: 2,
     timeoutMs: 4000,
-    ...createHttpClientTelemetry(log),
+    ...createHttpClientTelemetry(logger),
   },
 });
 
@@ -63,7 +64,7 @@ const app = new Elysia()
   // Official Plugin: Automatically tracks how long routes take (Tracing)
   .use(opentelemetry())
   // DIY Observability Plugin: Attaches the Pino logger (Logging)
-  .use(elysiaObservabilityPlugin(log))
+  .use(elysiaObservabilityPlugin(logger))
   // Health Probes: Liveness & Readiness checks
   .use(healthPlugin())
 
@@ -117,10 +118,10 @@ addShutdownHook({
   priority: LifecyclePriority.EARLY,
   name: 'elysia-http-server',
   fn: async () => {
-    log.info('stopping elysia http server...');
+    logger.info('stopping elysia http server...');
     await app.stop();
   },
 });
 
 app.listen(3000);
-log.info({ [InfraAttr.PORT]: 3000 }, 'auth-service started');
+logger.info({ [InfraAttr.PORT]: 3000 }, 'auth-service started');

@@ -18,5 +18,5 @@ export const InfraAttr = {
   // ── Result Semantics ───────────────────────────────────────
   ERROR_TYPE: 'error.type',
   ERROR_MESSAGE: 'exception.message', // OTel Standard
-  COMPONENT: 'system.component', // OTel Standard for identifying the internal subsystem
+  COMPONENT: 'infra.module', // Custom attribute. OTel reserves 'system.*' for OS/Hardware metrics.
 } as const;

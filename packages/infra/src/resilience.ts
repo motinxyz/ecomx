@@ -167,8 +167,18 @@ export function createResiliencePolicy(config: ResilienceConfig) {
           );
         }
 
-        // 2. Individual attempt timed out → reject with 504 Gateway Timeout
+        // 2. Individual attempt timed out OR User manually aborted
         if (err instanceof TaskCancelledError) {
+          // If the external signal was aborted, the user cancelled it (e.g. closed browser)
+          if (signal?.aborted) {
+            throw new ResilienceError(
+              `[${name}] request was aborted by caller`,
+              err.name,
+              HttpStatus.CLIENT_CLOSED_REQUEST,
+            );
+          }
+
+          // Otherwise, it was the internal Cockatiel timeout policy that fired
           throw new ResilienceError(
             `[${name}] timed out after ${timeoutMs}ms`,
             err.name,

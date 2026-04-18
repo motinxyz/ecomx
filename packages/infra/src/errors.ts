@@ -15,6 +15,7 @@ export const HttpStatus = {
   BAD_GATEWAY: 502,
   SERVICE_UNAVAILABLE: 503,
   GATEWAY_TIMEOUT: 504,
+  CLIENT_CLOSED_REQUEST: 499, // Standard Nginx code for user closing the browser/connection
 } as const;
 
 export type HttpStatusCode = (typeof HttpStatus)[keyof typeof HttpStatus];
