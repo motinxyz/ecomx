@@ -11,11 +11,14 @@ import {
   SamplingBreaker,
   CircuitState,
 } from 'cockatiel';
-import { ResilienceError, BaseAppError, HttpStatus } from './errors';
+import {
+  ResilienceError,
+  BaseAppError,
+  HttpStatus,
+  FetchClientError,
+} from './errors';
 
 export { CircuitState };
-
-
 
 export interface ResilienceConfig {
   /** Human-readable identifier (e.g., 'bkash-api', 'billing-service') */
@@ -49,7 +52,12 @@ export interface ResilienceConfig {
    * Emitted when Cockatiel schedules a retry attempt.
    * Wire this to a Prometheus counter to track retry volume per dependency.
    */
-  onRetry?: (info: { name: string; attempt: number; delay: number; reason: string }) => void;
+  onRetry?: (info: {
+    name: string;
+    attempt: number;
+    delay: number;
+    reason: string;
+  }) => void;
 
   /**
    * Emitted when an individual attempt exceeds the timeout deadline.
@@ -84,10 +92,7 @@ export function createResiliencePolicy(config: ResilienceConfig) {
   // 4xx client errors (e.g., 400 Bad Request, 401 Unauthorized) bypass both
   // the retry engine AND the circuit breaker statistics entirely.
   const retryableFilter = handleWhen((err) => {
-    if (
-      'retryable' in err &&
-      (err as { retryable: boolean }).retryable === false
-    ) {
+    if (err instanceof FetchClientError && err.retryable === false) {
       return false;
     }
     return true;
@@ -124,7 +129,10 @@ export function createResiliencePolicy(config: ResilienceConfig) {
         name,
         attempt: event.attempt,
         delay: event.delay,
-        reason: 'error' in event ? event.error.message : 'Retryable error encountered',
+        reason:
+          'error' in event
+            ? event.error.message
+            : 'Retryable error encountered',
       });
     });
   }
@@ -139,6 +147,8 @@ export function createResiliencePolicy(config: ResilienceConfig) {
   // 4. COMPOSE — order matters: breaker wraps retry wraps timeout.
   // If breaker is OPEN, we never even attempt the timeout or retry.
   const policy = wrap(cbPolicy, rPolicy, tPolicy);
+
+  let isolateHandle: { dispose: () => void } | null = null;
 
   return {
     /**
@@ -188,11 +198,7 @@ export function createResiliencePolicy(config: ResilienceConfig) {
 
         // 3. Non-retryable errors (e.g., 4xx) bypassed the retry engine.
         //    Let them pass through to the consumer without wrapping.
-        if (
-          err instanceof Error &&
-          'retryable' in err &&
-          (err as { retryable: boolean }).retryable === false
-        ) {
+        if (err instanceof FetchClientError && err.retryable === false) {
           throw err;
         }
 
@@ -220,5 +226,20 @@ export function createResiliencePolicy(config: ResilienceConfig) {
 
     /** Expose breaker state for K8s readiness probe integration */
     getBreakerState: () => cbPolicy.state,
+
+    /** Manually force the circuit breaker OPEN permanently (Kill Switch). */
+    isolate: () => {
+      if (!isolateHandle) {
+        isolateHandle = cbPolicy.isolate();
+      }
+    },
+
+    /** Manually heal the circuit breaker and restore traffic. */
+    reset: () => {
+      if (isolateHandle) {
+        isolateHandle.dispose();
+        isolateHandle = null;
+      }
+    },
   };
 }

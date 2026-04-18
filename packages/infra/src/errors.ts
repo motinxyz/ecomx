@@ -10,12 +10,12 @@ export const HttpStatus = {
   CONFLICT: 409,
   UNPROCESSABLE_ENTITY: 422,
   TOO_MANY_REQUESTS: 429,
+  CLIENT_CLOSED_REQUEST: 499, // Standard Nginx code for user closing the browser/connection
   INTERNAL_SERVER_ERROR: 500,
   NOT_IMPLEMENTED: 501,
   BAD_GATEWAY: 502,
   SERVICE_UNAVAILABLE: 503,
   GATEWAY_TIMEOUT: 504,
-  CLIENT_CLOSED_REQUEST: 499, // Standard Nginx code for user closing the browser/connection
 } as const;
 
 export type HttpStatusCode = (typeof HttpStatus)[keyof typeof HttpStatus];
@@ -31,7 +31,7 @@ export abstract class BaseAppError extends Error {
   constructor(
     message: string,
     statusCode: HttpStatusCode,
-    isOperational = true
+    isOperational = true,
   ) {
     super(message);
     this.name = this.constructor.name;
@@ -49,7 +49,7 @@ export class ReadinessTimeoutError extends BaseAppError {
     super(
       `Readiness check timed out after ${ms}ms`,
       HttpStatus.SERVICE_UNAVAILABLE,
-      true
+      true,
     );
     this.name = 'ReadinessTimeoutError';
   }

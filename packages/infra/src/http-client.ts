@@ -249,4 +249,20 @@ export class HttpClient {
   getBreakerState() {
     return this.policy.getBreakerState();
   }
+
+  /**
+   * Manually force the circuit breaker OPEN permanently (Kill Switch).
+   * It will never attempt to recover until `reset()` is called.
+   * Useful for security breaches or planned downstream maintenance.
+   */
+  isolate() {
+    this.policy.isolate();
+  }
+
+  /**
+   * Manually heal the circuit breaker and restore traffic immediately.
+   */
+  reset() {
+    this.policy.reset();
+  }
 }
