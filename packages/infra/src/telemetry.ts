@@ -50,8 +50,8 @@ export function createHttpClientTelemetry(
     onStateChange: (state: CircuitState, name: string) => {
       const level = STATE_LOG_LEVEL[state];
       logger[level](
-        { [InfraAttr.COMPONENT]: 'circuit-breaker', state },
-        `Dependency ${name} transitioned to ${state}`,
+        { [InfraAttr.COMPONENT]: 'circuit-breaker', state: CircuitState[state] },
+        `Dependency ${name} transitioned to ${CircuitState[state]}`,
       );
     },
 

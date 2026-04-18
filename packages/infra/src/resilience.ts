@@ -117,9 +117,10 @@ export function createResiliencePolicy(config: ResilienceConfig) {
 
   // Wire state change events to the injected callback (Inversion of Control)
   if (onStateChange) {
-    cbPolicy.onBreak(() => onStateChange(CircuitState.Open, name));
-    cbPolicy.onHalfOpen(() => onStateChange(CircuitState.HalfOpen, name));
-    cbPolicy.onReset(() => onStateChange(CircuitState.Closed, name));
+    // We bind directly to Cockatiel's native state change emitter.
+    // This guarantees that isolate() accurately emits CircuitState.Isolated
+    // rather than accidentally masquerading as CircuitState.Open.
+    cbPolicy.onStateChange((state) => onStateChange(state, name));
   }
 
   // Wire retry telemetry — fires BEFORE each retry delay begins.
