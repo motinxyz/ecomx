@@ -3,6 +3,7 @@ import {
   type ResilienceConfig,
 } from './resilience';
 import { FetchClientError, HttpStatus } from './errors';
+import { safeInvokeHooks } from './hooks';
 
 /** Shared options for HTTP methods that carry a request body (POST, PUT, PATCH). */
 export interface MutationRequestOpts {
@@ -122,6 +123,11 @@ export class HttpClient {
           throw err;
         }
 
+        // We had a genuine network failure (DNS, ECONNREFUSED) without an HTTP response.
+        // Track the latency anyway so we can see the network drop on the dashboard.
+        const durationMs = Math.round(performance.now() - start);
+        safeInvokeHooks('onResponse', this.onResponse, { name: this.name, durationMs, statusCode: 0 });
+
         // Genuine network failures (DNS, ECONNREFUSED, CORS) — retryable.
         const message = err instanceof Error ? err.message : String(err);
         throw new FetchClientError(
@@ -134,11 +140,7 @@ export class HttpClient {
       if (!response.ok) {
         const durationMs = Math.round(performance.now() - start);
         // Fire onResponse hooks even for error responses (for latency tracking)
-        if (this.onResponse?.length) {
-          for (const fn of this.onResponse) {
-            fn({ name: this.name, durationMs, statusCode: response.status });
-          }
-        }
+        safeInvokeHooks('onResponse', this.onResponse, { name: this.name, durationMs, statusCode: response.status });
         // 4xx = client error (bad input, auth failure) → NOT retryable, doesn't trip breaker.
         // 5xx = server error (upstream is down) → retryable, counts toward breaker.
         const isRetryable = response.status >= 500;
@@ -152,11 +154,7 @@ export class HttpClient {
       const durationMs = Math.round(performance.now() - start);
 
       // Fire onResponse hooks for successful responses
-      if (this.onResponse?.length) {
-        for (const fn of this.onResponse) {
-          fn({ name: this.name, durationMs, statusCode: response.status });
-        }
-      }
+      safeInvokeHooks('onResponse', this.onResponse, { name: this.name, durationMs, statusCode: response.status });
 
       // Handle empty responses (like 204 No Content) gracefully
       if (response.status === 204 || response.headers.get('content-length') === '0') {

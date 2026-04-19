@@ -17,6 +17,7 @@ import {
   HttpStatus,
   FetchClientError,
 } from './errors';
+import { safeInvokeHooks } from './hooks';
 
 export { CircuitState };
 
@@ -52,12 +53,14 @@ export interface ResilienceConfig {
    * Emitted when Cockatiel schedules a retry attempt.
    * Wire to Pino for logs and/or Prometheus counters for retry volume.
    */
-  onRetry?: Array<(info: {
-    name: string;
-    attempt: number;
-    delay: number;
-    reason: string;
-  }) => void>;
+  onRetry?: Array<
+    (info: {
+      name: string;
+      attempt: number;
+      delay: number;
+      reason: string;
+    }) => void
+  >;
 
   /**
    * Emitted when an individual attempt exceeds the timeout deadline.
@@ -69,17 +72,25 @@ export interface ResilienceConfig {
    * Emitted after every successful fetch response.
    * Wire to OTel Histograms for end-to-end request duration tracking.
    */
-  onResponse?: Array<(info: {
-    name: string;
-    durationMs: number;
-    statusCode: number;
-  }) => void>;
+  onResponse?: Array<
+    (info: { name: string; durationMs: number; statusCode: number }) => void
+  >;
 }
 
 export type ResilienceEngine = ReturnType<typeof createResiliencePolicy>;
 export const circuitBreakerRegistry = new Set<WeakRef<ResilienceEngine>>();
 
 /**
+ * Automatically cleans up the circuitBreakerRegistry when an engine
+ * is Garbage Collected to prevent Set memory leaks.
+ */
+const circuitBreakerCleanup = new FinalizationRegistry<
+  WeakRef<ResilienceEngine>
+>((deadRef) => {
+  circuitBreakerRegistry.delete(deadRef);
+});
+
+/**s
  * Creates a composable resilience policy: Timeout → Retry → Circuit Breaker.
  *
  * This is the pure policy engine. It has zero knowledge of HTTP or fetch.
@@ -133,7 +144,7 @@ export function createResiliencePolicy(config: ResilienceConfig) {
     // This guarantees that isolate() accurately emits CircuitState.Isolated
     // rather than accidentally masquerading as CircuitState.Open.
     cbPolicy.onStateChange((state) => {
-      for (const fn of config.onStateChange!) fn(state, name);
+      safeInvokeHooks('onStateChange', config.onStateChange, state, name);
     });
   }
 
@@ -149,7 +160,7 @@ export function createResiliencePolicy(config: ResilienceConfig) {
             ? event.error.message
             : 'Retryable error encountered',
       };
-      for (const fn of config.onRetry!) fn(info);
+      safeInvokeHooks('onRetry', config.onRetry, info);
     });
   }
 
@@ -157,7 +168,7 @@ export function createResiliencePolicy(config: ResilienceConfig) {
   if (config.onTimeout?.length) {
     tPolicy.onTimeout(() => {
       const info = { name, timeoutMs };
-      for (const fn of config.onTimeout!) fn(info);
+      safeInvokeHooks('onTimeout', config.onTimeout, info);
     });
   }
 
@@ -264,7 +275,11 @@ export function createResiliencePolicy(config: ResilienceConfig) {
   };
 
   // Register the engine so OpenTelemetry can poll its state safely
-  circuitBreakerRegistry.add(new WeakRef(engine));
+  const weakRef = new WeakRef(engine);
+  circuitBreakerRegistry.add(weakRef);
+
+  // Register with cleanup registry to remove the dead ref when GC'd
+  circuitBreakerCleanup.register(engine, weakRef);
 
   return engine;
 }

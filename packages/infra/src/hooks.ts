@@ -7,7 +7,7 @@ import type { ResilienceConfig } from './resilience';
  */
 
 export type HookKeys = {
-  [K in keyof ResilienceConfig]: ResilienceConfig[K] extends
+  [K in keyof ResilienceConfig]: ResilienceConfig[K] extends  // eslint-disable-next-line @typescript-eslint/no-explicit-any
     | Array<(...args: any[]) => void>
     | undefined
     ? K
@@ -61,6 +61,7 @@ export function mergeResilienceHooks(
   ...sources: Array<PartialConfig & PartialHooks>
 ): Omit<ResilienceConfig, 'name'> {
   const merged: Record<string, unknown> = {};
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const hookArrays: Record<string, Array<(...args: any[]) => void>> = {};
 
   for (const source of sources) {
@@ -68,8 +69,10 @@ export function mergeResilienceHooks(
       if (HOOK_KEYS.has(key)) {
         // Initialize the array bucket on first encounter
         if (!hookArrays[key]) hookArrays[key] = [];
+        if (!value) continue; // Guard against undefined/null hook properties
         // Collect hook callbacks into arrays
         const hooks = Array.isArray(value) ? value : [value];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         hookArrays[key].push(...(hooks as Array<(...args: any[]) => void>));
       } else {
         // Last-write-wins for scalar config (maxAttempts, timeoutMs, etc.)
@@ -84,4 +87,32 @@ export function mergeResilienceHooks(
   }
 
   return merged as Omit<ResilienceConfig, 'name'>;
+}
+
+/**
+ * Safely executes an array of observability/telemetry hooks.
+ * Wraps execution in a try/catch block so that poorly written or failing
+ * telemetry listeners do not crash the primary execution path.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function safeInvokeHooks<T extends any[]>(
+  hookName: string,
+  hooks: Array<(...args: T) => void> | undefined,
+  ...args: T
+) {
+  if (!hooks || hooks.length === 0) return;
+
+  for (const fn of hooks) {
+    try {
+      fn(...args);
+    } catch (err) {
+      // Intentionally swallow the error to prevent cascading failure.
+      // We log it to stderr so DevOps can still spot broken telemetry plugins.
+      console.error(
+        `[Observability Error]: The '${hookName}' telemetry hook threw an exception. Context:`,
+        JSON.stringify(args),
+        err,
+      );
+    }
+  }
 }
