@@ -5,6 +5,7 @@ import {
   healthPlugin,
   ObservabilityAttr,
   LogLevel,
+  createInfraMetrics,
 } from '@ecomx/observability';
 
 import {
@@ -27,6 +28,7 @@ import {
   addReadinessCheck,
   CircuitState,
   createHttpClientTelemetry,
+  mergeResilienceHooks,
 } from '@ecomx/infra';
 import Elysia from 'elysia';
 
@@ -47,11 +49,11 @@ const analytics = createAnalyticsClient([new PinoAnalyticsProvider(logger)]);
 const paymentClient = new HttpClient({
   name: 'stripe-api',
   baseUrl: 'https://api.stripe.com/v1',
-  resilience: {
-    maxAttempts: 2,
-    timeoutMs: 4000,
-    ...createHttpClientTelemetry(logger),
-  },
+  resilience: mergeResilienceHooks(
+    { maxAttempts: 2, timeoutMs: 4000 },
+    createHttpClientTelemetry(logger),
+    createInfraMetrics(),
+  ),
 });
 
 // 5. Connect the Circuit Breaker to K8s Readiness (if Stripe is fully down, take us offline!)

@@ -56,3 +56,11 @@ Translates Cockatiel engine state into standard HTTP errors before leaving the p
 
 ### Layer 4: The Consumer
 Microservices consuming this package do not need `try/catch` blocks. A global error handler (e.g., Elysia `app.onError`) can safely return `error.statusCode` directly to the client.
+
+## 📡 Telemetry Fan-Out Engine
+
+To maintain Zero-Dependency Purity, this package does not know about OpenTelemetry or Pino. Instead, it exposes a composable, event-driven hook system.
+
+*   **Array-Based Hooks**: Hooks like `onRetry` and `onResponse` are strictly typed as Arrays. This allows multiple external observers (Logs, Metrics) to listen to the exact same events simultaneously without overwriting each other.
+*   **`mergeResilienceHooks`**: A variadic utility that concatenates these hook arrays into a master config, while enforcing last-write-wins for scalar configurations (like `timeoutMs`).
+*   **Memory-Safe Registry**: The package automatically registers every active `ResilienceEngine` into a global `circuitBreakerRegistry` using `WeakRef`. This allows external metrics adapters to periodically "pull" breaker state without preventing Garbage Collection (preventing memory leaks for short-lived clients).

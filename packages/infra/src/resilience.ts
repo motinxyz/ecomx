@@ -43,28 +43,41 @@ export interface ResilienceConfig {
   breakerCooldownMs?: number;
 
   /**
-   * Injected callback for state change telemetry.
-   * Consumers wire this to their observability layer — no circular dependency.
+   * Injected callbacks for state change telemetry.
+   * Supports multiple listeners (logging, metrics, alerting) via arrays.
    */
-  onStateChange?: (state: CircuitState, name: string) => void;
+  onStateChange?: Array<(state: CircuitState, name: string) => void>;
 
   /**
    * Emitted when Cockatiel schedules a retry attempt.
-   * Wire this to a Prometheus counter to track retry volume per dependency.
+   * Wire to Pino for logs and/or Prometheus counters for retry volume.
    */
-  onRetry?: (info: {
+  onRetry?: Array<(info: {
     name: string;
     attempt: number;
     delay: number;
     reason: string;
-  }) => void;
+  }) => void>;
 
   /**
    * Emitted when an individual attempt exceeds the timeout deadline.
-   * Wire this to a Prometheus counter to track timeout frequency.
+   * Wire to Prometheus counters to track timeout frequency.
    */
-  onTimeout?: (info: { name: string; timeoutMs: number }) => void;
+  onTimeout?: Array<(info: { name: string; timeoutMs: number }) => void>;
+
+  /**
+   * Emitted after every successful fetch response.
+   * Wire to OTel Histograms for end-to-end request duration tracking.
+   */
+  onResponse?: Array<(info: {
+    name: string;
+    durationMs: number;
+    statusCode: number;
+  }) => void>;
 }
+
+export type ResilienceEngine = ReturnType<typeof createResiliencePolicy>;
+export const circuitBreakerRegistry = new Set<WeakRef<ResilienceEngine>>();
 
 /**
  * Creates a composable resilience policy: Timeout → Retry → Circuit Breaker.
@@ -81,7 +94,6 @@ export function createResiliencePolicy(config: ResilienceConfig) {
     minimumRps = 5,
     samplingDurationMs = 10_000,
     breakerCooldownMs = 30_000,
-    onStateChange,
   } = config;
 
   // 1. TIMEOUT — kill any single attempt that exceeds the deadline.
@@ -115,18 +127,20 @@ export function createResiliencePolicy(config: ResilienceConfig) {
     }),
   });
 
-  // Wire state change events to the injected callback (Inversion of Control)
-  if (onStateChange) {
+  // Wire state change events to the injected callbacks (Inversion of Control)
+  if (config.onStateChange?.length) {
     // We bind directly to Cockatiel's native state change emitter.
     // This guarantees that isolate() accurately emits CircuitState.Isolated
     // rather than accidentally masquerading as CircuitState.Open.
-    cbPolicy.onStateChange((state) => onStateChange(state, name));
+    cbPolicy.onStateChange((state) => {
+      for (const fn of config.onStateChange!) fn(state, name);
+    });
   }
 
   // Wire retry telemetry — fires BEFORE each retry delay begins.
-  if (config.onRetry) {
+  if (config.onRetry?.length) {
     rPolicy.onRetry((event) => {
-      config.onRetry!({
+      const info = {
         name,
         attempt: event.attempt,
         delay: event.delay,
@@ -134,14 +148,16 @@ export function createResiliencePolicy(config: ResilienceConfig) {
           'error' in event
             ? event.error.message
             : 'Retryable error encountered',
-      });
+      };
+      for (const fn of config.onRetry!) fn(info);
     });
   }
 
   // Wire timeout telemetry — fires when an individual attempt exceeds the deadline.
-  if (config.onTimeout) {
+  if (config.onTimeout?.length) {
     tPolicy.onTimeout(() => {
-      config.onTimeout!({ name, timeoutMs });
+      const info = { name, timeoutMs };
+      for (const fn of config.onTimeout!) fn(info);
     });
   }
 
@@ -151,7 +167,10 @@ export function createResiliencePolicy(config: ResilienceConfig) {
 
   let isolateHandle: { dispose: () => void } | null = null;
 
-  return {
+  const engine = {
+    /** The human-readable name of this dependency */
+    name,
+
     /**
      * Execute an async action through the full resilience chain.
      *
@@ -243,4 +262,9 @@ export function createResiliencePolicy(config: ResilienceConfig) {
       }
     },
   };
+
+  // Register the engine so OpenTelemetry can poll its state safely
+  circuitBreakerRegistry.add(new WeakRef(engine));
+
+  return engine;
 }

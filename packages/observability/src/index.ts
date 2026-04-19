@@ -10,5 +10,8 @@ export * from './elysia';
 export * from './express';
 export * from './health';
 
+// ── Infrastructure Metrics (The Dashboard) ───────────────
+export * from './infra-metrics';
+
 // ── Re-exports from Official Plugins ──────────────────
 export { opentelemetry } from '@elysiajs/opentelemetry';

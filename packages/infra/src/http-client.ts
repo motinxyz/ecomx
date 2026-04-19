@@ -56,14 +56,18 @@ export interface HttpClientConfig {
  */
 export class HttpClient {
   private readonly policy: ReturnType<typeof createResiliencePolicy>;
+  private readonly name: string;
   private readonly baseUrl: string;
   private readonly defaultHeaders: Record<string, string>;
   private readonly beforeRequest?: HttpClientConfig['beforeRequest'];
+  private readonly onResponse?: ResilienceConfig['onResponse'];
 
   constructor(config: HttpClientConfig) {
+    this.name = config.name;
     this.baseUrl = config.baseUrl;
     this.defaultHeaders = config.defaultHeaders ?? {};
     this.beforeRequest = config.beforeRequest;
+    this.onResponse = config.resilience?.onResponse;
 
     this.policy = createResiliencePolicy({
       name: config.name,
@@ -107,6 +111,7 @@ export class HttpClient {
       };
 
       let response: Response;
+      const start = performance.now();
       try {
         response = await fetch(url, finalInit);
       } catch (err: unknown) {
@@ -127,6 +132,13 @@ export class HttpClient {
       }
 
       if (!response.ok) {
+        const durationMs = Math.round(performance.now() - start);
+        // Fire onResponse hooks even for error responses (for latency tracking)
+        if (this.onResponse?.length) {
+          for (const fn of this.onResponse) {
+            fn({ name: this.name, durationMs, statusCode: response.status });
+          }
+        }
         // 4xx = client error (bad input, auth failure) → NOT retryable, doesn't trip breaker.
         // 5xx = server error (upstream is down) → retryable, counts toward breaker.
         const isRetryable = response.status >= 500;
@@ -135,6 +147,15 @@ export class HttpClient {
           response.status,
           isRetryable,
         );
+      }
+
+      const durationMs = Math.round(performance.now() - start);
+
+      // Fire onResponse hooks for successful responses
+      if (this.onResponse?.length) {
+        for (const fn of this.onResponse) {
+          fn({ name: this.name, durationMs, statusCode: response.status });
+        }
       }
 
       // Handle empty responses (like 204 No Content) gracefully

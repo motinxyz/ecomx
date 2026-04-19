@@ -47,26 +47,26 @@ export function createHttpClientTelemetry(
   logger: TelemetryLogger,
 ): Partial<Pick<ResilienceConfig, 'onStateChange' | 'onRetry' | 'onTimeout'>> {
   return {
-    onStateChange: (state: CircuitState, name: string) => {
+    onStateChange: [(state: CircuitState, name: string) => {
       const level = STATE_LOG_LEVEL[state];
       logger[level](
         { [InfraAttr.COMPONENT]: 'circuit-breaker', state: CircuitState[state] },
         `Dependency ${name} transitioned to ${CircuitState[state]}`,
       );
-    },
+    }],
 
-    onRetry: ({ name, attempt, delay }) => {
+    onRetry: [({ name, attempt, delay }) => {
       logger.warn(
         { [InfraAttr.COMPONENT]: 'retry', dependency: name, attempt, delayMs: delay },
         `Retrying ${name} — attempt ${attempt} in ${delay}ms`,
       );
-    },
+    }],
 
-    onTimeout: ({ name, timeoutMs }) => {
+    onTimeout: [({ name, timeoutMs }) => {
       logger.error(
         { [InfraAttr.COMPONENT]: 'timeout', dependency: name, timeoutMs },
         `${name} timed out after ${timeoutMs}ms`,
       );
-    },
+    }],
   };
 }
