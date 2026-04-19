@@ -90,7 +90,7 @@ const circuitBreakerCleanup = new FinalizationRegistry<
   circuitBreakerRegistry.delete(deadRef);
 });
 
-/**s
+/**
  * Creates a composable resilience policy: Timeout → Retry → Circuit Breaker.
  *
  * This is the pure policy engine. It has zero knowledge of HTTP or fetch.

@@ -104,13 +104,26 @@ export function safeInvokeHooks<T extends any[]>(
 
   for (const fn of hooks) {
     try {
-      fn(...args);
+      const result = fn(...args) as unknown;
+      
+      // If the hook was async, it returns a Promise. The synchronous try/catch above
+      // will NOT catch promise rejections. We must attach a .catch() to prevent 
+      // UnhandledPromiseRejection from crashing the entire Node.js process.
+      if (result && typeof (result as Promise<unknown>).catch === 'function') {
+        (result as Promise<unknown>).catch((asyncErr) => {
+          console.error(
+            `[Observability Error]: The '${hookName}' async telemetry hook rejected. Context:`,
+            args, // Node's console.error handles circular references natively
+            asyncErr,
+          );
+        });
+      }
     } catch (err) {
       // Intentionally swallow the error to prevent cascading failure.
       // We log it to stderr so DevOps can still spot broken telemetry plugins.
       console.error(
         `[Observability Error]: The '${hookName}' telemetry hook threw an exception. Context:`,
-        JSON.stringify(args),
+        args, // Avoid JSON.stringify here! If args has circular refs, stringify will crash the catch block.
         err,
       );
     }
