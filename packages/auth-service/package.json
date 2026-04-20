@@ -5,9 +5,11 @@
   "type": "module",
   "dependencies": {
     "@ecomx/analytics": "workspace:*",
+    "@ecomx/env": "workspace:*",
     "@ecomx/infra": "workspace:*",
     "@ecomx/observability": "workspace:*",
     "@opentelemetry/api": "^1.9.1",
+    "zod": "^3.25.0",
     "elysia": "^1.4.28"
   },
   "devDependencies": {},

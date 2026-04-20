@@ -1,10 +1,11 @@
+import { env } from './config/env';
+
 import {
   createLogger,
   elysiaObservabilityPlugin,
   opentelemetry,
   healthPlugin,
   ObservabilityAttr,
-  LogLevel,
   createInfraMetrics,
 } from '@ecomx/observability';
 
@@ -37,8 +38,8 @@ initLifecycleListeners();
 
 // 2. Create the service-scoped logger
 const logger = createLogger({
-  serviceName: 'auth-service',
-  level: process.env.LOG_LEVEL ?? LogLevel.INFO,
+  serviceName: env.OTEL_SERVICE_NAME,
+  level: env.LOG_LEVEL,
 });
 
 // 3. Initialize the Analytics Orchestrator with our strategy
@@ -125,5 +126,5 @@ addShutdownHook({
   },
 });
 
-app.listen(3000);
-logger.info({ [InfraAttr.PORT]: 3000 }, 'auth-service started');
+app.listen(env.PORT);
+logger.info({ [InfraAttr.PORT]: env.PORT }, `${env.OTEL_SERVICE_NAME} started`);
